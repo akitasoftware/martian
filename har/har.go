@@ -291,6 +291,37 @@ type Content struct {
 	Encoding string `json:"encoding,omitempty"`
 }
 
+// Mimics Content, except Text is represented as a string to get around json
+// library's default treatment of []byte as base64-encoded.
+type contentWithString struct {
+	Size     int64  `json:"size"`
+	MimeType string `json:"mimeType"`
+	Text     string `json:"text,omitempty"`
+	Encoding string `json:"encoding,omitempty"`
+}
+
+func (c Content) MarshalJSON() ([]byte, error) {
+	cs := contentWithString{
+		Size:     c.Size,
+		MimeType: c.MimeType,
+		Text:     string(c.Text),
+		Encoding: c.Encoding,
+	}
+	return json.Marshal(cs)
+}
+
+func (c *Content) UnmarshalJSON(data []byte) error {
+	var cs contentWithString
+	if err := json.Unmarshal(data, &cs); err != nil {
+		return err
+	}
+	c.Size = cs.Size
+	c.MimeType = cs.MimeType
+	c.Text = []byte(cs.Text)
+	c.Encoding = cs.Encoding
+	return nil
+}
+
 // Option is a configurable setting for the logger.
 type Option func(l *Logger)
 
