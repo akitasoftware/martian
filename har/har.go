@@ -52,9 +52,18 @@ type Logger struct {
 	tail    *Entry
 }
 
+type AkitaExtension struct {
+	// User-specifeid tags.
+	Tags map[string]string `json:"tags,omitempty"`
+
+	// True if this HAR file is recording outbound requests/responses.
+	Outbound bool `json:"outbound,omitempty"`
+}
+
 // HAR is the top level object of a HAR log.
 type HAR struct {
-	Log *Log `json:"log"`
+	Log      *Log           `json:"log"`
+	AkitaExt AkitaExtension `json:"akita_ext"`
 }
 
 // Log is the HAR HTTP request and response log.
