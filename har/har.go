@@ -84,6 +84,14 @@ type Creator struct {
 	Version string `json:"version"`
 }
 
+type MessageTimestamps struct {
+	// Timestamp when request or response was first observed on the network
+	StartTime time.Time
+
+	// Timestamp when request or response was completed
+	EndTime time.Time
+}
+
 // Entry is a individual log entry for a request or response.
 type Entry struct {
 	// ID is the unique ID for the entry.
@@ -101,7 +109,12 @@ type Entry struct {
 	// Timings describes various phases within request-response round trip. All
 	// times are specified in milliseconds.
 	Timings *Timings `json:"timings"`
-	next    *Entry
+
+	next *Entry
+
+	// Recorded timestamps from message request; used to compute
+	// Timings information when paired with response
+	requestTimestamps *MessageTimestamps
 }
 
 // Request holds data about an individual HTTP request.
@@ -164,11 +177,11 @@ type Cache struct {
 // times are specified in milliseconds
 type Timings struct {
 	// Send is the time required to send HTTP request to the server.
-	Send int64 `json:"send"`
+	Send float32 `json:"send"`
 	// Wait is the time spent waiting for a response from the server.
-	Wait int64 `json:"wait"`
+	Wait float32 `json:"wait"`
 	// Receive is the time required to read entire response from server or cache.
-	Receive int64 `json:"receive"`
+	Receive float32 `json:"receive"`
 }
 
 // Cookie is the data about a cookie on a request or response.
@@ -505,7 +518,35 @@ func (l *Logger) RecordRequest(id string, req *http.Request) error {
 		Cache:           &Cache{},
 		Timings:         &Timings{},
 	}
+	return l.recordRequestInternal(id, entry)
+}
 
+func durationToMilliseconds(d time.Duration) float32 {
+	return float32(d.Microseconds()) / 1000.0
+}
+
+// RecordRequestWithTimings logs an HTTP request for the given ID, along with
+// additional timing information collected from a trace.
+func (l *Logger) RecordRequestWithTimestamps(id string, req *http.Request, requestTimestamps *MessageTimestamps) error {
+	hreq, err := NewRequest(req, l.postDataLogging(req))
+	if err != nil {
+		return err
+	}
+
+	entry := &Entry{
+		ID:                id,
+		StartedDateTime:   requestTimestamps.StartTime,
+		Request:           hreq,
+		Cache:             &Cache{},
+		Timings:           &Timings{},
+		requestTimestamps: requestTimestamps,
+	}
+	sendDuration := requestTimestamps.EndTime.Sub(requestTimestamps.StartTime)
+	entry.Timings.Send = durationToMilliseconds(sendDuration)
+	return l.recordRequestInternal(id, entry)
+}
+
+func (l *Logger) recordRequestInternal(id string, entry *Entry) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -582,6 +623,41 @@ func (l *Logger) RecordResponse(id string, res *http.Response) error {
 	if e, ok := l.entries[id]; ok {
 		e.Response = hres
 		e.Time = time.Since(e.StartedDateTime).Nanoseconds() / 1000000
+	}
+
+	return nil
+}
+
+// RecordRequestWithTimings logs an HTTP response, associating it with the previously-
+// logged HTTP request with the same id.  The response timestamps are used to compute
+// the Timing information.
+func (l *Logger) RecordResponseWithTimestamps(id string, res *http.Response, responseTimestamps *MessageTimestamps) error {
+	hres, err := NewResponse(res, l.bodyLogging(res))
+	if err != nil {
+		return err
+	}
+
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	if e, ok := l.entries[id]; ok {
+		e.Response = hres
+		// If no request timing information, use the StartedDateTime
+		// which will still be present, but leave the Timings information alone.
+		// This could result in odd results if the data is not being processed
+		// in real time.
+		//
+		// |-----------------------Time---------------------|
+		// |   recv      |    wait       |       send       |
+		// |<-request--->|               |<---response----->|
+		//
+		e.Time = responseTimestamps.EndTime.Sub(e.StartedDateTime).Milliseconds()
+		if e.requestTimestamps != nil {
+			waitDuration := responseTimestamps.StartTime.Sub(e.requestTimestamps.EndTime)
+			e.Timings.Wait = durationToMilliseconds(waitDuration)
+			sendDuration := responseTimestamps.EndTime.Sub(responseTimestamps.StartTime)
+			e.Timings.Send = durationToMilliseconds(sendDuration)
+		}
 	}
 
 	return nil
