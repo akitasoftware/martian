@@ -454,10 +454,66 @@ func TestHARExportsTime(t *testing.T) {
 	}
 
 	entry := log.Entries[0]
-	min, max := int64(10), int64(100)
+	min, max := float32(10), float32(100)
 	if got := entry.Time; got < min || got > max {
-		t.Errorf("entry.Time: got %dms, want between %dms and %vms", got, min, max)
+		t.Errorf("entry.Time: got %fms, want between %fms and %fms", got, min, max)
 	}
+}
+
+func TestHARExportsTimestamp(t *testing.T) {
+	logger := NewLogger()
+
+	req, err := http.NewRequest("GET", "http://example.com", nil)
+	if err != nil {
+		t.Fatalf("NewRequest(): got %v, want no error", err)
+	}
+
+	_, remove, err := martian.TestContext(req, nil, nil)
+	if err != nil {
+		t.Fatalf("martian.TestContext(): got %v, want no error", err)
+	}
+	defer remove()
+
+	id := "1234-5678-90ab"
+	startTime := time.Now()
+
+	err = logger.RecordRequestWithTimestamps(id, req, &MessageTimestamps{
+		StartTime: startTime,
+		EndTime:   startTime.Add(10 * time.Millisecond),
+	})
+	if err != nil {
+		t.Fatalf("RecordRequestWithTimestamps(): got %v, want no error", err)
+	}
+
+	res := proxyutil.NewResponse(200, nil, req)
+
+	err = logger.RecordResponseWithTimestamps(id, res, &MessageTimestamps{
+		StartTime: startTime.Add(11 * time.Millisecond),
+		EndTime:   startTime.Add(100 * time.Millisecond),
+	})
+	if err != nil {
+		t.Fatalf("RecordResponseWithTimestamp(): got %v, want no error", err)
+	}
+
+	log := logger.Export().Log
+	if got, want := len(log.Entries), 1; got != want {
+		t.Fatalf("len(log.Entries): got %v, want %v", got, want)
+	}
+
+	entry := log.Entries[0]
+	if entry.Time != float32(100.0) {
+		t.Errorf("entry.Time: got %fms, want 100.0", entry.Time)
+	}
+	if entry.Timings.Send != float32(10.0) {
+		t.Errorf("entry.Timings.Send: got %fms, want 10.0", entry.Timings.Send)
+	}
+	if entry.Timings.Wait != float32(1.0) {
+		t.Errorf("entry.Timings.Wait: got %fms, want 1.0", entry.Timings.Wait)
+	}
+	if entry.Timings.Receive != float32(89.0) {
+		t.Errorf("entry.Timings.Wait: got %fms, want 89.0", entry.Timings.Receive)
+	}
+
 }
 
 func TestReset(t *testing.T) {
