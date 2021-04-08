@@ -99,7 +99,7 @@ type Entry struct {
 	// StartedDateTime is the date and time stamp of the request start (ISO 8601).
 	StartedDateTime time.Time `json:"startedDateTime"`
 	// Time is the total elapsed time of the request in milliseconds.
-	Time int64 `json:"time"`
+	Time float32 `json:"time"`
 	// Request contains the detailed information about the request.
 	Request *Request `json:"request"`
 	// Response contains the detailed information about the response.
@@ -622,7 +622,7 @@ func (l *Logger) RecordResponse(id string, res *http.Response) error {
 
 	if e, ok := l.entries[id]; ok {
 		e.Response = hres
-		e.Time = time.Since(e.StartedDateTime).Nanoseconds() / 1000000
+		e.Time = durationToMilliseconds(time.Since(e.StartedDateTime))
 	}
 
 	return nil
@@ -648,15 +648,15 @@ func (l *Logger) RecordResponseWithTimestamps(id string, res *http.Response, res
 		// in real time.
 		//
 		// |-----------------------Time---------------------|
-		// |   recv      |    wait       |       send       |
+		// |   send      |    wait       |     receive      |
 		// |<-request--->|               |<---response----->|
 		//
-		e.Time = responseTimestamps.EndTime.Sub(e.StartedDateTime).Milliseconds()
+		e.Time = durationToMilliseconds(responseTimestamps.EndTime.Sub(e.StartedDateTime))
 		if e.requestTimestamps != nil {
 			waitDuration := responseTimestamps.StartTime.Sub(e.requestTimestamps.EndTime)
 			e.Timings.Wait = durationToMilliseconds(waitDuration)
-			sendDuration := responseTimestamps.EndTime.Sub(responseTimestamps.StartTime)
-			e.Timings.Send = durationToMilliseconds(sendDuration)
+			receiveDuration := responseTimestamps.EndTime.Sub(responseTimestamps.StartTime)
+			e.Timings.Receive = durationToMilliseconds(receiveDuration)
 		}
 	}
 
