@@ -53,8 +53,8 @@ type Logger struct {
 }
 
 type AkitaExtension struct {
-	// User-specifeid tags.
-	Tags map[string]string `json:"tags,omitempty"`
+	// User-specified tags.
+	Tags map[tags.Key]string `json:"tags,omitempty"`
 
 	// True if this HAR file is recording outbound requests/responses.
 	Outbound bool `json:"outbound,omitempty"`
