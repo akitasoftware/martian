@@ -38,6 +38,7 @@ import (
 	"github.com/google/martian/v3/log"
 	"github.com/google/martian/v3/messageview"
 	"github.com/google/martian/v3/proxyutil"
+	"github.com/google/martian/v3/tags"
 )
 
 // Logger maintains request and response log entries.
